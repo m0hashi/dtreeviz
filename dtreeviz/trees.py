@@ -21,6 +21,8 @@ from dtreeviz.models.shadow_decision_tree import ShadowDecTree
 from dtreeviz.models.shadow_decision_tree import ShadowDecTreeNode
 from dtreeviz.utils import inline_svg_images, myround, scale_SVG
 
+from collections import Counter
+
 # How many bins should we have based upon number of classes
 NUM_BINS = [0, 0, 10, 9, 8, 6, 6, 6, 5, 5, 5]
 
@@ -501,7 +503,9 @@ def dtreeviz(tree_model,
              ticks_fontsize: int = 8,
              fontname: str = "Arial",
              colors: dict = None,
-             scale=1.0
+             scale=1.0,
+             show_target_distributions: bool = True,
+             show_td_kws: dict = {},
              ) \
         -> DTreeViz:
     """
@@ -565,13 +569,32 @@ def dtreeviz(tree_model,
 
     def split_node(name, node_name, split):
         if fancy:
-            labelgraph = node_label(node) if show_node_labels else ''
-            html = f"""<table border="0">
-            {labelgraph}
-            <tr>
-                    <td><img src="{tmp}/node{node.id}_{os.getpid()}.svg"/></td>
-            </tr>
-            </table>"""
+            if show_target_distributions:
+                node_samples = len(node.samples())
+                sample_ratio = np.round(node_samples / X_data.shape[0] * 100,1)
+                labelgraph = node_label(node) if show_node_labels else ''
+                html = f"""<table border="0">
+                {labelgraph}
+                <tr>
+                        <td>n = {len(node.samples())} ({sample_ratio}%)</td>
+                </tr>
+                <tr>
+                        <td><img src="{tmp}/node{node.id}_{os.getpid()}.svg"/></td>
+                </tr>
+                <tr>
+                        <td>{name}@{split}</td>
+                </tr>
+                </table>
+                """
+            else:
+                labelgraph = node_label(node) if show_node_labels else ''
+                html = f"""<table border="0">
+                {labelgraph}
+                <tr>
+                        <td><img src="{tmp}/node{node.id}_{os.getpid()}.svg"/></td>
+                </tr>
+                </table>
+                """
         else:
             html = f"""<font face="Helvetica" color="#444443" point-size="12">{name}@{split}</font>"""
         if node.id in highlight_path:
@@ -595,13 +618,29 @@ def dtreeviz(tree_model,
             return f'leaf{node.id} [margin="0" shape=box penwidth="0" color="{colors["text"]}" label=<{html}>]'
 
     def class_leaf_node(node, label_fontsize: int = 12):
-        labelgraph = node_label(node) if show_node_labels else ''
-        html = f"""<table border="0" CELLBORDER="0">
-        {labelgraph}
-        <tr>
-                <td><img src="{tmp}/leaf{node.id}_{os.getpid()}.svg"/></td>
-        </tr>
-        </table>"""
+        if show_target_distributions:
+            node_samples = len(node.samples())
+            sample_ratio = np.round(node_samples / X_data.shape[0] * 100,1)
+            labelgraph = node_label(node) if show_node_labels else ''
+            # html = f"""<table border="0">
+            html = f"""<table border="0" CELLBORDER="0">
+            {labelgraph}
+            <tr>
+                    <td>n = {len(node.samples())} ({sample_ratio}%)</td>
+            </tr>
+            <tr>
+                    <td><img src="{tmp}/leaf{node.id}_{os.getpid()}.svg"/></td>
+            </tr>
+            </table>
+            """
+        else:
+            labelgraph = node_label(node) if show_node_labels else ''
+            html = f"""<table border="0" CELLBORDER="0">
+            {labelgraph}
+            <tr>
+                    <td><img src="{tmp}/leaf{node.id}_{os.getpid()}.svg"/></td>
+            </tr>
+            </table>"""
         if node.id in highlight_path:
             return f'leaf{node.id} [margin="0" shape=box penwidth=".5" color="{colors["highlight"]}" style="dashed" label=<{html}>]'
         else:
@@ -795,7 +834,10 @@ def dtreeviz(tree_model,
                                 ticks_fontsize=ticks_fontsize,
                                 label_fontsize=label_fontsize,
                                 fontname=fontname,
-                                highlight_node=node.id in highlight_path)
+                                highlight_node=node.id in highlight_path,
+                                show_target_distributions=show_target_distributions,
+                                show_td_kws=show_td_kws,
+                                shadow_tree=shadow_tree)
             else:
                 regr_split_viz(node, X_data, y_data,
                                filename=f"{tmp}/node{node.id}_{os.getpid()}.svg",
@@ -810,10 +852,16 @@ def dtreeviz(tree_model,
                                colors=colors)
 
         nname = node_name(node)
-        if not node.is_categorical_split():
-            gr_node = split_node(node.feature_name(), nname, split=myround(node.split(), precision))
+        if show_target_distributions:
+            if not node.is_categorical_split():
+                gr_node = split_node(node.feature_name(), nname, split=myround(node.split(), precision))
+            else:
+                gr_node = split_node(node.feature_name(), nname, split=node.split()[0])
         else:
-            gr_node = split_node(node.feature_name(), nname, split=node.split()[0])
+            if not node.is_categorical_split():
+                gr_node = split_node(node.feature_name(), nname, split=myround(node.split(), precision))
+            else:
+                gr_node = split_node(node.feature_name(), nname, split=node.split()[0])
         internal.append(gr_node)
 
     leaves = []
@@ -821,7 +869,11 @@ def dtreeviz(tree_model,
         if shadow_tree.is_classifier():
             class_leaf_viz(node, colors=color_values,
                            filename=f"{tmp}/leaf{node.id}_{os.getpid()}.svg",
-                           graph_colors=colors)
+                           graph_colors=colors,
+                           show_target_distributions=show_target_distributions,
+                           show_td_kws=show_td_kws,
+                           shadow_tree=shadow_tree,
+                           )
             leaves.append(class_leaf_node(node))
         else:
             # for now, always gen leaf
@@ -890,6 +942,8 @@ def dtreeviz(tree_model,
             """)
 
     newline = "\n\t"
+
+
     dot = f"""
 digraph G {{
     splines=line;
@@ -924,11 +978,17 @@ def class_split_viz(node: ShadowDecTreeNode,
                     precision=1,
                     histtype: ('bar', 'barstacked', 'strip') = 'barstacked',
                     X: np.array = None,
-                    highlight_node: bool = False
+                    highlight_node: bool = False,
+                    show_target_distributions: bool = False,
+                    show_td_kws: dict={},
+                    shadow_tree: ShadowDecTree = None,
                     ):
     height_range = (.5, 1.5)
     h = prop_size(n=node_heights[node.id], counts=node_heights.values(), output_range=height_range)
-    figsize = (3.3, h)
+    if show_target_distributions:
+        figsize = (3,2) if show_td_kws.get('figsize') is None else show_td_kws.get('figisze')
+    else:
+        figsize = (3.3, h)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     feature_name = node.feature_name()
@@ -937,59 +997,73 @@ def class_split_viz(node: ShadowDecTreeNode,
     X_feature = X_train[:, node.feature()]
     X_feature, y_train = X_feature[node.samples()], y_train[node.samples()]
 
-    n_classes = node.shadow_tree.nclasses()
-    nbins = get_num_bins(histtype, n_classes)
-    overall_feature_range = (np.min(X_train[:, node.feature()]), np.max(X_train[:, node.feature()]))
-
-    overall_feature_range_wide = (overall_feature_range[0] - overall_feature_range[0] * .08,
-                                  overall_feature_range[1] + overall_feature_range[1] * .05)
-
-    ax.set_xlabel(f"{feature_name}", fontsize=label_fontsize, fontname=fontname, color=colors['axis_label'])
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(.3)
-    ax.spines['bottom'].set_linewidth(.3)
-
-    class_names = node.shadow_tree.class_names
-
-    class_values = node.shadow_tree.classes()
+    if show_target_distributions:
+        n_classes = shadow_tree.nclasses()
+        nbins = get_num_bins(histtype, n_classes)
+        class_names = shadow_tree.class_names
+        class_counts = node.class_counts()
+        class_values = shadow_tree.classes()
+    else:
+        n_classes = node.shadow_tree.nclasses()
+        nbins = get_num_bins(histtype, n_classes)
+        class_names = node.shadow_tree.class_names
+        class_values = node.shadow_tree.classes()
     X_hist = [X_feature[y_train == cl] for cl in class_values]
 
-    if histtype == 'strip':
-        ax.yaxis.set_visible(False)
-        ax.spines['left'].set_visible(False)
-        sigma = .013
-        mu = .05
-        class_step = .08
-        dot_w = 20
-        ax.set_ylim(0, mu + n_classes * class_step)
-        for i, bucket in enumerate(X_hist):
-            alpha = colors['scatter_marker_alpha'] if len(bucket) > 10 else 1
-            y_noise = np.random.normal(mu + i * class_step, sigma, size=len(bucket))
-            ax.scatter(bucket, y_noise, alpha=alpha, marker='o', s=dot_w, c=colors[i],
-                       edgecolors=colors['edge'], lw=.3)
+
+    if show_target_distributions:
+        if show_td_kws.get('show_ratio') is True:
+            class_counts = np.array(class_counts) / sum(class_counts)
+            ax.set_ylim(0,1)
+        c = [colors[key_] for key_ in class_names.keys()]
+        ax.bar(class_names.values(), class_counts, color=c)
     else:
-        X_colors = [colors[cl] for cl in class_values]
+        overall_feature_range = (np.min(X_train[:, node.feature()]), np.max(X_train[:, node.feature()]))
 
-        bins = np.linspace(start=overall_feature_range[0], stop=overall_feature_range[1], num=nbins, endpoint=True)
-        # print(f"\nrange: {overall_feature_range}, r={r}, nbins={nbins}, len(bins)={len(bins)}, binwidth={binwidth}\n{bins}")
-        # bins[-1] = overall_feature_range[1] # make sure rounding doesn't kill last value on right
-        hist, bins, barcontainers = ax.hist(X_hist,
-                                            color=X_colors,
-                                            align='mid',
-                                            histtype=histtype,
-                                            bins=bins,
-                                            label=class_names)
-        # Alter appearance of each bar
-        for patch in barcontainers:
-            for rect in patch.patches:
-                rect.set_linewidth(.5)
-                rect.set_edgecolor(colors['rect_edge'])
-        ax.set_yticks([0, max([max(h) for h in hist])])
+        overall_feature_range_wide = (overall_feature_range[0] - overall_feature_range[0] * .08,
+                                      overall_feature_range[1] + overall_feature_range[1] * .05)
 
-    ax.set_xlim(*overall_feature_range_wide)
-    ax.set_xticks(overall_feature_range)
-    ax.tick_params(axis='both', which='major', width=.3, labelcolor=colors['tick_label'], labelsize=ticks_fontsize)
+        ax.set_xlabel(f"{feature_name}", fontsize=label_fontsize, fontname=fontname, color=colors['axis_label'])
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_linewidth(.3)
+        ax.spines['bottom'].set_linewidth(.3)
+
+        if histtype == 'strip':
+            ax.yaxis.set_visible(False)
+            ax.spines['left'].set_visible(False)
+            sigma = .013
+            mu = .05
+            class_step = .08
+            dot_w = 20
+            ax.set_ylim(0, mu + n_classes * class_step)
+            for i, bucket in enumerate(X_hist):
+                alpha = colors['scatter_marker_alpha'] if len(bucket) > 10 else 1
+                y_noise = np.random.normal(mu + i * class_step, sigma, size=len(bucket))
+                ax.scatter(bucket, y_noise, alpha=alpha, marker='o', s=dot_w, c=colors[i],
+                           edgecolors=colors['edge'], lw=.3)
+        else:
+            X_colors = [colors[cl] for cl in class_values]
+
+            bins = np.linspace(start=overall_feature_range[0], stop=overall_feature_range[1], num=nbins, endpoint=True)
+            # print(f"\nrange: {overall_feature_range}, r={r}, nbins={nbins}, len(bins)={len(bins)}, binwidth={binwidth}\n{bins}")
+            # bins[-1] = overall_feature_range[1] # make sure rounding doesn't kill last value on right
+            hist, bins, barcontainers = ax.hist(X_hist,
+                                                color=X_colors,
+                                                align='mid',
+                                                histtype=histtype,
+                                                bins=bins,
+                                                label=class_names)
+            # Alter appearance of each bar
+            for patch in barcontainers:
+                for rect in patch.patches:
+                    rect.set_linewidth(.5)
+                    rect.set_edgecolor(colors['rect_edge'])
+            ax.set_yticks([0, max([max(h) for h in hist])])
+
+        ax.set_xlim(*overall_feature_range_wide)
+        ax.set_xticks(overall_feature_range)
+        ax.tick_params(axis='both', which='major', width=.3, labelcolor=colors['tick_label'], labelsize=ticks_fontsize)
 
     def wedge(ax, x, color):
         xmin, xmax = ax.get_xlim()
@@ -1021,7 +1095,8 @@ def class_split_viz(node: ShadowDecTreeNode,
                     fontname=fontname,
                     color=colors['text_wedge'])
 
-    wedge(ax, node.split(), color=colors['wedge'])
+    if not show_target_distributions:
+        wedge(ax, node.split(), color=colors['wedge'])
     if highlight_node:
         wedge(ax, X[node.feature()], color=colors['highlight'])
 
@@ -1033,24 +1108,35 @@ def class_split_viz(node: ShadowDecTreeNode,
 def class_leaf_viz(node: ShadowDecTreeNode,
                    colors: List[str],
                    filename: str,
-                   graph_colors=None):
+                   graph_colors=None,
+                   show_target_distributions: bool=False,
+                   show_td_kws: dict={},
+                   shadow_tree: ShadowDecTree = None,
+                   ):
     graph_colors = adjust_colors(graph_colors)
     # size = prop_size(node.nsamples(), counts=node.shadow_tree.leaf_sample_counts(),
     #                  output_range=(.2, 1.5))
+    if show_target_distributions:
+        draw_barchart(
+            node=node, shadow_tree=shadow_tree, filename=filename, 
+            colors = colors, show_td_kws=show_td_kws,
+        )
 
-    minsize = .15
-    maxsize = 1.3
-    slope = 0.02
-    nsamples = node.nsamples()
-    size = nsamples * slope + minsize
-    size = min(size, maxsize)
+    else:
 
-    # we visually need n=1 and n=9 to appear different but diff between 300 and 400 is no big deal
-    # size = np.sqrt(np.log(size))
-    counts = node.class_counts()
-    prediction = node.prediction_name()
-    draw_piechart(counts, size=size, colors=colors, filename=filename, label=f"n={nsamples}\n{prediction}",
-                  graph_colors=graph_colors)
+        minsize = .15
+        maxsize = 1.3
+        slope = 0.02
+        nsamples = node.nsamples()
+        size = nsamples * slope + minsize
+        size = min(size, maxsize)
+
+        # we visually need n=1 and n=9 to appear different but diff between 300 and 400 is no big deal
+        # size = np.sqrt(np.log(size))
+        counts = node.class_counts()
+        prediction = node.prediction_name()
+        draw_piechart(counts, size=size, colors=colors, filename=filename, label=f"n={nsamples}\n{prediction}",
+                      graph_colors=graph_colors)
 
 
 def regr_split_viz(node: ShadowDecTreeNode,
@@ -1278,6 +1364,24 @@ def draw_piechart(counts, size, colors, filename, label=None, fontname="Arial", 
                 horizontalalignment='center',
                 verticalalignment='top',
                 fontsize=9, color=graph_colors['text'], fontname=fontname)
+
+    # plt.tight_layout()
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+def draw_barchart(node, shadow_tree, filename, colors: dict, label=None, 
+        fontname="Arial", graph_colors=None, show_td_kws: dict={}):
+    fig, ax = plt.subplots(1, 1, figsize=(3, 2))
+
+    n_classes = shadow_tree.nclasses()
+    class_names = shadow_tree.class_names
+    class_counts = node.class_counts()
+    if show_td_kws.get('show_ratio') is True:
+        class_counts = np.array(class_counts)/sum(class_counts)
+        ax.set_ylim(0,1)
+    class_values = shadow_tree.classes()
+    c = [colors[key_] for key_ in class_names.keys()]
+    ax.bar(class_names.values(), class_counts, color=c)
 
     # plt.tight_layout()
     plt.savefig(filename, bbox_inches='tight', pad_inches=0)

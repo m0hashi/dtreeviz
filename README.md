@@ -256,6 +256,31 @@ viz.view()
 For more examples and different implementations, please see the jupyter [notebook](notebooks/examples.ipynb) full of examples.
 
 ### Target distribution on each nodes
+```bash
+clas = tree.DecisionTreeClassifier(max_depth=3)  
+iris = load_iris()
+
+X_train = iris.data
+y_train = iris.target
+clas.fit(X_train, y_train)
+
+viz = dtreeviz(clas, 
+               X_train,
+               y_train,
+               target_name='target',
+               feature_names=iris.feature_names,
+               class_names=["setosa", "versicolor", "virginica"], 
+               histtype= 'barstacked',
+               show_node_labels=True,
+               show_target_distributions=True,
+               show_td_kws={'show_ratio':True},
+               scale=1.5,
+               fancy=True,
+              )  # barstackes is default
+display(viz)
+```
+
+
 <img src='./target_distribution.png' width=80%>
 
 

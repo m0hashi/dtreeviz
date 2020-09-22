@@ -505,7 +505,7 @@ def dtreeviz(tree_model,
              colors: dict = None,
              scale=1.0,
              show_target_distributions: bool = True,
-             show_td_kws: dict = {},
+             show_td_kws: dict = {'show_ratio':False},
              ) \
         -> DTreeViz:
     """

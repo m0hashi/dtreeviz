@@ -255,6 +255,10 @@ viz.view()
 
 For more examples and different implementations, please see the jupyter [notebook](notebooks/examples.ipynb) full of examples.
 
+### Target distribution on each nodes
+<img src='./target_distribution.png' width=80%>
+
+
 ### Regression univariate feature-target space
 
 <img src="https://user-images.githubusercontent.com/178777/49105092-9b264d80-f234-11e8-9d67-cc58c47016ca.png" width="60%">
